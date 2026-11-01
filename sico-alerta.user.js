@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         SICO - ALERTA
 // @namespace    http://tampermonkey.net/
-// @version      7.9.3
-// @description  Versión 7.9.3 - Prueba de actualización automática remota
+// @version      7.9.5
+// @description  Versión 7.9.5 - Corrección de parpadeo en buscador rápido e indicador de versión
 // @match        *://www.brysonhillsperu.pe:8080/sistemadecontrol/*
 // @updateURL    https://raw.githubusercontent.com/JoseOrVi/SICO/refs/heads/main/sico-alerta.user.js
 // @downloadURL  https://raw.githubusercontent.com/JoseOrVi/SICO/refs/heads/main/sico-alerta.user.js
@@ -15,12 +15,49 @@
 (function() {
     'use strict';
 
+    const VERSION_ACTUAL = '7.9.5';
     const CSV_URL = 'https://docs.google.com/spreadsheets/d/1OiKBrjgOTj9IyWM-SWJeo-4u6_nnYNUuV8Mq8IwtVis/gviz/tq?tqx=out:csv';
     const TELEGRAM_TOKEN = '8851097774:AAELu-_TSiCE-rx3_da3PxtGR22hlhxg8pE';
     const TELEGRAM_CHAT_ID = '-1003929518182';
 
     let listaRegistros = [];
     let sistemaApagado = false;
+    let timeoutOcultarBusqueda = null;
+    let timeoutAvisoFlash = null;
+
+    function mostrarBannerVersion() {
+        const prev = document.getElementById('sico-version-badge');
+        if (prev) prev.remove();
+
+        const banner = document.createElement('div');
+        banner.id = 'sico-version-badge';
+        banner.innerText = `SICO v${VERSION_ACTUAL}`;
+        banner.style.cssText = [
+            'position: fixed',
+            'top: 6px',
+            'left: 6px',
+            'z-index: 99999999',
+            'background-color: rgba(33, 33, 33, 0.88)',
+            'color: #76FF03',
+            'padding: 4px 9px',
+            'font-size: 11.5px',
+            'font-family: monospace, sans-serif',
+            'font-weight: bold',
+            'border-radius: 4px',
+            'border-left: 3px solid #76FF03',
+            'box-shadow: 0 2px 6px rgba(0,0,0,0.35)',
+            'pointer-events: none',
+            'transition: opacity 0.4s ease-in-out',
+            'opacity: 1'
+        ].join(';');
+
+        document.body.appendChild(banner);
+
+        setTimeout(() => {
+            banner.style.opacity = '0';
+            setTimeout(() => { banner.remove(); }, 400);
+        }, 2200);
+    }
 
     function normalizarPlaca(str) {
         if (!str) return '';
@@ -206,6 +243,7 @@
         });
     }
 
+    mostrarBannerVersion();
     sincronizarRegistros();
     setInterval(sincronizarRegistros, 180000);
 
@@ -249,20 +287,34 @@
             document.body.appendChild(toast);
         }
 
+        if (timeoutAvisoFlash) {
+            clearTimeout(timeoutAvisoFlash);
+            timeoutAvisoFlash = null;
+        }
+
         toast.innerText = mensaje;
         toast.style.backgroundColor = colorFondo;
         toast.style.color = colorTexto;
-        toast.style.opacity = '1';
         toast.style.display = 'block';
+        toast.style.opacity = '1';
 
-        setTimeout(() => {
+        timeoutAvisoFlash = setTimeout(() => {
             toast.style.opacity = '0';
-            setTimeout(() => { toast.style.display = 'none'; }, 200);
+            timeoutAvisoFlash = setTimeout(() => {
+                toast.style.display = 'none';
+            }, 200);
         }, 1400);
     }
 
     function mostrarAvisoBusqueda(lineasTexto, esPreventivo = false) {
         if (sistemaApagado) return;
+
+        // Cancelamos cualquier orden previa de ocultar el cartel por escritura rápida
+        if (timeoutOcultarBusqueda) {
+            clearTimeout(timeoutOcultarBusqueda);
+            timeoutOcultarBusqueda = null;
+        }
+
         let toast = document.getElementById('sico-toast-busqueda');
         if (!toast) {
             toast = document.createElement('div');
@@ -279,7 +331,7 @@
             toast.style.borderRadius = '6px';
             toast.style.textAlign = 'left';
             toast.style.pointerEvents = 'none';
-            toast.style.transition = 'opacity 0.2s ease-in-out';
+            toast.style.transition = 'opacity 0.15s ease-in-out';
             document.body.appendChild(toast);
         }
 
@@ -294,16 +346,52 @@
         }
 
         toast.innerHTML = lineasTexto.map(l => `<span style="color: inherit !important; display: block;">${l}</span>`).join('');
-        toast.style.opacity = '1';
         toast.style.display = 'block';
+        toast.style.opacity = '1';
     }
 
     function ocultarAvisoBusqueda() {
         let toast = document.getElementById('sico-toast-busqueda');
         if (toast) {
             toast.style.opacity = '0';
-            setTimeout(() => { toast.style.display = 'none'; }, 200);
+            if (timeoutOcultarBusqueda) {
+                clearTimeout(timeoutOcultarBusqueda);
+            }
+            timeoutOcultarBusqueda = setTimeout(() => {
+                toast.style.display = 'none';
+                timeoutOcultarBusqueda = null;
+            }, 150);
         }
+    }
+
+    function evaluarTextoBuscador(valorInput) {
+        if (sistemaApagado) return;
+        const query = normalizarPlaca(valorInput);
+
+        if (query.length >= 3) {
+            const coincidencias = listaRegistros.filter(r => {
+                const cfg = clasificarTipo(r.tipo);
+                return (cfg.categoria === 'RESTRICCION' || cfg.categoria === 'PREVENTIVO') && r.placa.includes(query);
+            });
+
+            if (coincidencias.length > 0) {
+                let lineasMensaje = [];
+                let hayRestriccionCritica = false;
+
+                coincidencias.forEach(c => {
+                    const cfgMatch = clasificarTipo(c.tipo);
+                    const preventivo = (cfgMatch.categoria === 'PREVENTIVO');
+                    if (!preventivo) hayRestriccionCritica = true;
+
+                    const etiquetaTipo = preventivo ? 'PREV' : 'REST';
+                    lineasMensaje.push(`⚠️ [${etiquetaTipo}] <b>${c.placa}</b>: ${c.motivo}`);
+                });
+
+                mostrarAvisoBusqueda(lineasMensaje, !hayRestriccionCritica);
+                return;
+            }
+        }
+        ocultarAvisoBusqueda();
     }
 
     function inicializarMonitoreoBuscador() {
@@ -312,35 +400,11 @@
         inputTexto.dataset.monitorListener = "true";
 
         inputTexto.addEventListener('input', function() {
-            if (sistemaApagado) return;
-            const query = normalizarPlaca(inputTexto.value);
+            evaluarTextoBuscador(inputTexto.value);
+        });
 
-            if (query.length >= 3) {
-                const coincidencias = listaRegistros.filter(r => {
-                    const cfg = clasificarTipo(r.tipo);
-                    return (cfg.categoria === 'RESTRICCION' || cfg.categoria === 'PREVENTIVO') && r.placa.includes(query);
-                });
-
-                if (coincidencias.length > 0) {
-                    let lineasMensaje = [];
-                    let hayRestriccionCritica = false;
-
-                    coincidencias.forEach(c => {
-                        const cfgMatch = clasificarTipo(c.tipo);
-                        const preventivo = (cfgMatch.categoria === 'PREVENTIVO');
-                        if (!preventivo) hayRestriccionCritica = true;
-
-                        const etiquetaTipo = preventivo ? 'PREV' : 'REST';
-                        lineasMensaje.push(`⚠️ [${etiquetaTipo}] <b>${c.placa}</b>: ${c.motivo}`);
-                    });
-
-                    mostrarAvisoBusqueda(lineasMensaje, !hayRestriccionCritica);
-                } else {
-                    ocultarAvisoBusqueda();
-                }
-            } else {
-                ocultarAvisoBusqueda();
-            }
+        inputTexto.addEventListener('keyup', function() {
+            evaluarTextoBuscador(inputTexto.value);
         });
     }
 
