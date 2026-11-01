@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         SICO - ALERTA
 // @namespace    http://tampermonkey.net/
-// @version      7.9.2
-// @description  Versión 7.9.2 - Verificación de cargador remoto y sincronización de GitHub
+// @version      7.9.3
+// @description  Versión 7.9.3 - Prueba de actualización automática remota
 // @match        *://www.brysonhillsperu.pe:8080/sistemadecontrol/*
 // @updateURL    https://raw.githubusercontent.com/JoseOrVi/SICO/refs/heads/main/sico-alerta.user.js
 // @downloadURL  https://raw.githubusercontent.com/JoseOrVi/SICO/refs/heads/main/sico-alerta.user.js
