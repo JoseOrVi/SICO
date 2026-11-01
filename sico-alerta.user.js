@@ -2,8 +2,10 @@
 // @name         SICO - ALERTA
 // @namespace    http://tampermonkey.net/
 // @version      7.9.1
-// @description  Clasificación operativa, banner reubicado, sin sombra, colores brillantes y detección de clics blindada ante cambios del SICO
+// @description  Clasificación operativa, banner reubicado, sin sombra, colores brillantes y detección de clics blindada con actualización remota
 // @match        *://www.brysonhillsperu.pe:8080/sistemadecontrol/*
+// @updateURL    https://raw.githubusercontent.com/JoseOrVi/SICO/refs/heads/main/sico-alerta.user.js
+// @downloadURL  https://raw.githubusercontent.com/JoseOrVi/SICO/refs/heads/main/sico-alerta.user.js
 // @grant        GM_xmlhttpRequest
 // @connect      docs.google.com
 // @connect      googleusercontent.com
@@ -225,7 +227,6 @@
         }, 150);
     }
 
-    // Banner Flash Principal (Acción de Ingreso/Salida)
     function mostrarAvisoFlash(mensaje, colorFondo, colorTexto = '#ffffff') {
         if (sistemaApagado) return;
         let toast = document.getElementById('sico-toast-aviso');
@@ -260,7 +261,6 @@
         }, 1400);
     }
 
-    // Banner Secundario Multilínea (A la derecha del logo, transparente, letra 14.5px)
     function mostrarAvisoBusqueda(lineasTexto, esPreventivo = false) {
         if (sistemaApagado) return;
         let toast = document.getElementById('sico-toast-busqueda');
@@ -404,7 +404,7 @@
 
             const btnAccion = celdas[0]?.querySelector('a, button, input[type="checkbox"], img, span');
             const celdaEmpresa = celdas[1];
-            const celdaPlaca = celdas[2];
+            const celdaPlaca = cceldas = celdas[2]; // Ajustado
             const celdaDestino = celdas[3];
             const celdaPersonas = celdas[5];
             const celdaPeriodo = celdas[6];
@@ -426,7 +426,6 @@
             if (registroEncontrado) {
                 cfg = clasificarTipo(registroEncontrado.tipo);
 
-                // Detección dinámica de estado directamente de la fila activa en este turno
                 let estadoFilaActual = '';
                 for (let i = celdas.length - 1; i >= 0; i--) {
                     const txt = celdas[i].innerText.trim().toUpperCase();
@@ -497,24 +496,6 @@
                         return;
                     }
 
-                    if (matchActivo && cfg && cfg.esSilencioso) {
-                        notificarTelegram(registroEncontrado.placa, (estadoClickEval === 'SALIDA' || estadoClickEval === 'PENDIENTE') ? 'INGRESO' : 'SALIDA', cfg, registroEncontrado.motivo, datosSico);
-                    }
-                    else if (matchActivo && cfg && !cfg.esSilencioso) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        e.stopImmediatePropagation();
-
-                        notificarTelegram(registroEncontrado.placa, (estadoClickEval === 'SALIDA' || estadoClickEval === 'PENDIENTE') ? 'INGRESO' : 'SALIDA', cfg, registroEncontrado.motivo, datosSico);
-
-                        mostrarModalOperativo(registroEncontrado, cfg, () => {
-                            btnAccion.dataset.autorizadoUnaVez = "true";
-                            btnAccion.click();
-                        });
-                        return false;
-                    }
-
-                    // Lectura ultra-fresca en el momento exacto del clic sobre la fila actual
                     let estadoClickEval = '';
                     const celdasClick = fila.querySelectorAll('td');
                     for (let j = celdasClick.length - 1; j >= 0; j--) {
@@ -528,6 +509,25 @@
                         const htmlFilaClick = fila.innerHTML.toUpperCase();
                         if (htmlFilaClick.includes('SALIDA')) estadoClickEval = 'SALIDA';
                         else if (htmlFilaClick.includes('INGRESO')) estadoClickEval = 'INGRESO';
+                    }
+
+                    const movimientoNombre = (estadoClickEval === 'SALIDA' || estadoClickEval === 'PENDIENTE') ? 'INGRESO' : 'SALIDA';
+
+                    if (matchActivo && cfg && cfg.esSilencioso) {
+                        notificarTelegram(registroEncontrado.placa, movimientoNombre, cfg, registroEncontrado.motivo, datosSico);
+                    }
+                    else if (matchActivo && cfg && !cfg.esSilencioso) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.stopImmediatePropagation();
+
+                        notificarTelegram(registroEncontrado.placa, movimientoNombre, cfg, registroEncontrado.motivo, datosSico);
+
+                        mostrarModalOperativo(registroEncontrado, cfg, () => {
+                            btnAccion.dataset.autorizadoUnaVez = "true";
+                            btnAccion.click();
+                        });
+                        return false;
                     }
 
                     const esAccionIngreso = (estadoClickEval === 'SALIDA' || estadoClickEval === 'PENDIENTE');
