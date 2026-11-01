@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         SICO - ALERTA
 // @namespace    http://tampermonkey.net/
-// @version      7.9.1
-// @description  Clasificación operativa, banner reubicado, sin sombra, colores brillantes y detección de clics blindada con actualización remota
+// @version      7.9.2
+// @description  Versión 7.9.2 - Verificación de cargador remoto y sincronización de GitHub
 // @match        *://www.brysonhillsperu.pe:8080/sistemadecontrol/*
 // @updateURL    https://raw.githubusercontent.com/JoseOrVi/SICO/refs/heads/main/sico-alerta.user.js
 // @downloadURL  https://raw.githubusercontent.com/JoseOrVi/SICO/refs/heads/main/sico-alerta.user.js
@@ -404,7 +404,7 @@
 
             const btnAccion = celdas[0]?.querySelector('a, button, input[type="checkbox"], img, span');
             const celdaEmpresa = celdas[1];
-            const celdaPlaca = cceldas = celdas[2]; // Ajustado
+            const celdaPlaca = celdas[2];
             const celdaDestino = celdas[3];
             const celdaPersonas = celdas[5];
             const celdaPeriodo = celdas[6];
