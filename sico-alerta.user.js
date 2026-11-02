@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         SICO - ALERTA
 // @namespace    http://tampermonkey.net/
-// @version      7.9.5
-// @description  Versión 7.9.5 - Corrección de parpadeo en buscador rápido e indicador de versión
+// @version      7.9.6
+// @description  Versión 7.9.6 (Base 7.9.5) - Oculta del banner superior las placas que ya aparecen en la tabla SICO
 // @match        *://www.brysonhillsperu.pe:8080/sistemadecontrol/*
 // @updateURL    https://raw.githubusercontent.com/JoseOrVi/SICO/refs/heads/main/sico-alerta.user.js
 // @downloadURL  https://raw.githubusercontent.com/JoseOrVi/SICO/refs/heads/main/sico-alerta.user.js
@@ -15,7 +15,7 @@
 (function() {
     'use strict';
 
-    const VERSION_ACTUAL = '7.9.5';
+    const VERSION_ACTUAL = '7.9.6';
     const CSV_URL = 'https://docs.google.com/spreadsheets/d/1OiKBrjgOTj9IyWM-SWJeo-4u6_nnYNUuV8Mq8IwtVis/gviz/tq?tqx=out:csv';
     const TELEGRAM_TOKEN = '8851097774:AAELu-_TSiCE-rx3_da3PxtGR22hlhxg8pE';
     const TELEGRAM_CHAT_ID = '-1003929518182';
@@ -77,6 +77,33 @@
     function escaparHTML(texto) {
         if (!texto) return '';
         return texto.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    // Obtiene todas las placas que ya están visibles en las filas actuales de la tabla del SICO
+    function obtenerPlacasVisiblesEnTabla() {
+        const placasEnTabla = new Set();
+        const filas = document.querySelectorAll('table tbody tr');
+        filas.forEach(fila => {
+            if (fila.offsetParent === null) return; // Ignora filas ocultas
+            const celdas = fila.querySelectorAll('td');
+            if (celdas.length >= 3) {
+                const celdaPlaca = celdas[2];
+                // Clonamos la celda sin las etiquetas inyectadas (ej. ⛔ [RESTRINGIDO]) para leer solo la placa pura
+                const clone = celdaPlaca.cloneNode(true);
+                const spansInyectados = clone.querySelectorAll('span');
+                spansInyectados.forEach(s => {
+                    const txt = s.innerText || '';
+                    if (txt.includes('[') && txt.includes(']')) {
+                        s.remove();
+                    }
+                });
+                const placaLimpia = normalizarPlaca(clone.innerText || '');
+                if (placaLimpia) {
+                    placasEnTabla.add(placaLimpia);
+                }
+            }
+        });
+        return placasEnTabla;
     }
 
     function clasificarTipo(tipoCrudo) {
@@ -309,7 +336,6 @@
     function mostrarAvisoBusqueda(lineasTexto, esPreventivo = false) {
         if (sistemaApagado) return;
 
-        // Cancelamos cualquier orden previa de ocultar el cartel por escritura rápida
         if (timeoutOcultarBusqueda) {
             clearTimeout(timeoutOcultarBusqueda);
             timeoutOcultarBusqueda = null;
@@ -369,9 +395,17 @@
         const query = normalizarPlaca(valorInput);
 
         if (query.length >= 3) {
+            // Leemos qué placas ya están presentes en la tabla del SICO
+            const placasEnSico = obtenerPlacasVisiblesEnTabla();
+
             const coincidencias = listaRegistros.filter(r => {
                 const cfg = clasificarTipo(r.tipo);
-                return (cfg.categoria === 'RESTRICCION' || cfg.categoria === 'PREVENTIVO') && r.placa.includes(query);
+                const esCategoriaAlerta = (cfg.categoria === 'RESTRICCION' || cfg.categoria === 'PREVENTIVO');
+                const coincideBusqueda = r.placa.includes(query);
+                // Condicional: Si la placa ya figura en la tabla del SICO abajo, la descartamos del banner superior
+                const yaEstaEnSico = placasEnSico.has(r.placa);
+
+                return esCategoriaAlerta && coincideBusqueda && !yaEstaEnSico;
             });
 
             if (coincidencias.length > 0) {
@@ -457,6 +491,12 @@
     function procesarTabla() {
         if (sistemaApagado) return;
         inicializarMonitoreoBuscador();
+
+        // Si hay una búsqueda activa (>= 3 caracteres), reevaluamos para que apenas la tabla del SICO muestre la placa abajo, se quite del banner superior
+        const inputTexto = document.querySelector('input[type="text"][placeholder*="buscar"], input[type="text"][placeholder*="Texto"], input[type="text"]');
+        if (inputTexto && inputTexto.value.trim().length >= 3) {
+            evaluarTextoBuscador(inputTexto.value);
+        }
 
         const filas = document.querySelectorAll('table tbody tr');
         const ahora = new Date();
